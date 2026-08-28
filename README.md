@@ -1,84 +1,84 @@
 # AgentOps
 
-**Un agente autónomo de AWS Bedrock que monitorea y opera infraestructura real, con límites de seguridad y trazabilidad completa.**
+**An autonomous AWS Bedrock agent that monitors and operates real infrastructure, with safety limits and full traceability.**
 
-## El problema que resuelve
+## The Problem It Solves
 
-Un ingeniero de guardia recibe alertas de varios sistemas (CI/CD, contenedores, logs) y tiene que investigar y actuar manualmente. **AgentOps hace ese primer diagnóstico y ejecuta acciones seguras predefinidas, con un humano aprobando lo riesgoso.**
+An on-call engineer receives alerts from multiple systems (CI/CD, containers, logs) and has to investigate and act manually. **AgentOps performs the initial diagnosis and executes safe pre-defined actions, with a human approving high-risk operations.**
 
-## Arquitectura
+## Architecture
 
 ```
 MonitorJobs (cron)
-    ↓ detecta problema
+    ↓ detects issue
     ↓ POST /alert
 Operator (FastAPI + Bedrock)
-    ↓ analiza con Bedrock
-    ↓ decide acción según riesgo
-    → acción autónoma (bajo riesgo)
-    → solicita aprobación (alto riesgo)
+    ↓ analyzes with Bedrock
+    ↓ decides action based on risk level
+    → autonomous action (low risk)
+    → requests approval (high risk)
     → OpenTelemetry → CloudWatch/Jaeger
 ```
 
-### Servicios
+### Services
 
-| Servicio | Stack | Puerto | Función |
-|----------|-------|--------|---------|
-| **API** | Node.js + Express | 3000 | Aplicación monitoreada |
-| **MonitorJobs** | Alpine + Cron + Curl | — | Health checks, métricas de contenedor |
-| **Operator** | Python + FastAPI + Bedrock | 8000 | Agente autónomo que diagnostica y actúa |
+| Service | Stack | Port | Purpose |
+|---------|-------|------|---------|
+| **API** | Node.js + Express | 3000 | Application being monitored |
+| **MonitorJobs** | Alpine + Cron + Curl | — | Health checks, container metrics |
+| **Operator** | Python + FastAPI + Bedrock | 8000 | Autonomous agent that diagnoses and acts |
 
-## Alcance MVP
+## MVP Scope
 
-### Fuentes de monitoreo
+### Monitoring Sources
 
-- **GitHub Actions**: estado de workflows/pipelines (éxito/fallo, logs de error)
-- **Contenedores Docker**: estado (up/down), CPU/memoria, logs recientes
-- **Health checks de API**: latencia y errores en `/health`
+- **GitHub Actions**: workflow/pipeline status (success/failure, error logs)
+- **Docker Containers**: status (up/down), CPU/memory, recent logs
+- **API Health Checks**: latency and errors on `/health`
 
-### Acciones del agente
+### Agent Actions
 
-| Riesgo | Acción | Modo |
-|--------|--------|------|
-| Bajo | Reiniciar contenedor caído | Autónoma |
-| Bajo | Re-lanzar workflow de GitHub Actions | Autónoma |
-| Alto | Escalar recursos / apagar servicio | Humano-in-the-loop |
+| Risk | Action | Mode |
+|------|--------|------|
+| Low | Restart crashed container | Autonomous |
+| Low | Re-run failed GitHub Actions workflow | Autonomous |
+| High | Scale resources / stop service | Human-in-the-loop |
 
-## Pilares técnicos
+## Technical Pillars
 
-### Action Groups con permisos por nivel de riesgo
+### Action Groups with Risk-Based Permissions
 
-Cada acción pasa por clasificación: lectura (libre), escritura de bajo riesgo (autónoma), escritura de alto riesgo (requiere confirmación). Implementado como lógica en Lambdas, no en el prompt.
+Each action passes through classification: read (free), low-risk write (autonomous), high-risk write (requires confirmation). Implemented as logic in Lambdas, not in prompts.
 
-### Guardrails de Bedrock
+### Bedrock Guardrails
 
-Bloquean que el agente ejecute acciones fuera del set permitido. Todo pasa por funciones tipadas y parametrizadas — nunca comandos shell arbitrarios.
+Block the agent from executing actions outside the allowed set. Everything goes through typed, parameterized functions — never arbitrary shell commands.
 
-### Observabilidad con OpenTelemetry
+### OpenTelemetry Observability
 
-Cada decisión genera una traza: qué preguntó, qué tool llamó, parámetros usados, tiempo de ejecución, éxito/fallo. Va a CloudWatch o Jaeger/Grafana.
+Every decision generates a trace: what it asked, which tool it called, parameters used, execution time, success/failure. Sent to CloudWatch or Jaeger/Grafana.
 
 ## Quick Start
 
 ```bash
-# Levantar todos los servicios
+# Start all services
 docker compose up -d
 
-# Verificar
+# Verify
 curl http://localhost:3000          # API
 curl http://localhost:8000/health   # Operator
-docker compose logs -f monitor      # Logs del monitor
+docker compose logs -f monitor      # Monitor logs
 ```
 
-## Estructura
+## Structure
 
 ```
 AgentOperator/
 ├── docker-compose.yml
-├── .env                    # Variables sensibles (no commitear)
+├── .env                    # Sensitive variables (do not commit)
 ├── API/                    # Express - health check endpoint
-├── MonitorJobs/            # Cron - health checks + métricas de contenedor
-└── Operator/               # FastAPI - agente Bedrock (mock por ahora)
+├── MonitorJobs/            # Cron - health checks + container metrics
+└── Operator/               # FastAPI - Bedrock agent (mock for now)
     ├── main.py
     ├── bedrock_agent.py
     ├── schemas.py
@@ -87,21 +87,21 @@ AgentOperator/
 
 ## Demo
 
-Escenario guionado:
-1. Tumbar intencionalmente un contenedor
-2. MonitorJobs lo detecta en el siguiente chequeo
-3. Operator diagnostica la causa (revisa logs)
-4. Decide reiniciar (bajo riesgo → autónoma)
-5. Registra todo en la traza de OpenTelemetry
+Scripted scenario:
+1. Intentionally take down a container
+2. MonitorJobs detects it on the next check
+3. Operator diagnoses the cause (reviews logs)
+4. Decides to restart (low risk → autonomous)
+5. Records everything in the OpenTelemetry trace
 
-## Fuera de alcance (MVP)
+## Out of Scope (MVP)
 
-- Auto-scaling real
-- Múltiples clouds
-- Chat multi-turno complejo
-- Gestión de secretos avanzada
+- Real auto-scaling
+- Multi-cloud support
+- Complex multi-turn chat
+- Advanced secret management
 
-El foco es la calidad del ciclo: **detectar → decidir → actuar → registrar**.
+The focus is on the quality of the cycle: **detect → decide → act → record**.
 
 ## Stack
 
@@ -109,4 +109,4 @@ El foco es la calidad del ciclo: **detectar → decidir → actuar → registrar
 - **API**: Node.js 20 + Express
 - **Monitor**: Alpine + Cron + Curl + Docker CLI
 - **Agent**: Python 3.12 + FastAPI + boto3 (Bedrock)
-- **Observabilidad**: OpenTelemetry → CloudWatch/Jaeger
+- **Observability**: OpenTelemetry → CloudWatch/Jaeger

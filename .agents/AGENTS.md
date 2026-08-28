@@ -61,6 +61,7 @@ Operator (FastAPI)
 
 ## Conventions
 
+- **Language**: All code, comments, commit messages, documentation, and technical artifacts MUST be written in English. This is a hard rule — no exceptions for any file in the repository.
 - Shell scripts use `#!/bin/bash` with `set -e` not required (cron jobs should be resilient)
 - Python follows FastAPI patterns with Pydantic schemas
 - Docker images use specific Alpine/Node/Python versions (no `latest`)
