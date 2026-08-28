@@ -1,4 +1,5 @@
 .env
+.atl/
 
 # Node
 node_modules/
