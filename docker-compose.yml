@@ -1,0 +1,25 @@
+services:
+  api:
+    build: ./API
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+
+  operator:
+    build: ./Operator
+    ports:
+      - "8000:8000"
+
+  monitor:
+    build: ./MonitorJobs
+    depends_on:
+      - api
+      - operator
+    environment:
+      - API_URL=http://api:3000
+      - API_CONTAINER=agentoperator-api-1
+      - OPERATOR_URL=http://operator:8000
+      - WEBHOOK_URL=${WEBHOOK_URL:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
