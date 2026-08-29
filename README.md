@@ -1,32 +1,57 @@
 # AgentOps
 
-**An autonomous AWS Bedrock agent that monitors and operates real infrastructure, with safety limits and full traceability.**
+**An autonomous AWS Bedrock agent that monitors Docker container infrastructure and executes corrective actions autonomously when risk is low, requesting human approval when risk is high.**
+
+**Pitch:** An on-call engineer receives alerts from multiple systems and has to investigate and act manually. AgentOps performs the initial diagnosis and executes safe pre-defined actions, with a human approving high-risk operations.
 
 ## The Problem It Solves
 
-An on-call engineer receives alerts from multiple systems (CI/CD, containers, logs) and has to investigate and act manually. **AgentOps performs the initial diagnosis and executes safe pre-defined actions, with a human approving high-risk operations.**
+An on-call engineer receives alerts from various systems (CI/CD, containers, logs) and must investigate and act manually. AgentOps performs the first diagnosis and executes safe pre-defined actions, with human approval for high-risk operations.
 
 ## Architecture
+
+### Current State (MVP)
 
 ```
 MonitorJobs (cron)
     ↓ detects issue
     ↓ POST /alert
-Operator (FastAPI + Bedrock)
-    ↓ analyzes with Bedrock
-    ↓ decides action based on risk level
-    → autonomous action (low risk)
-    → requests approval (high risk)
-    → OpenTelemetry → CloudWatch/Jaeger
+Operator (FastAPI)
+    ↓ receives alert (mock for now)
+    → will integrate with Bedrock
 ```
+
+### Target Architecture
+
+```
+monitor (alert) → agent (FastAPI) → Bedrock Agent (with Guardrails)
+                                            ↓
+                                  Action Groups (Return Control)
+                                   ↓          ↓           ↓
+                            Docker API   GitHub API   Health checks
+                                            ↓
+                              OpenTelemetry → Jaeger/CloudWatch
+```
+
+**Key Architecture Decision:** Action Groups use Bedrock's **Return Control** mode, not Lambda. The `agent` container (FastAPI) receives Bedrock's request to call function X with parameters, executes it locally, and returns the result to the agent in a second `invoke_agent` call. This avoids deploying Lambda for a project running 100% locally in Docker.
 
 ### Services
 
 | Service | Stack | Port | Purpose |
 |---------|-------|------|---------|
-| **API** | Node.js + Express | 3000 | Application being monitored |
+| **API** | Node.js + Express | 3000 | Application being monitored (simulated) |
 | **MonitorJobs** | Alpine + Cron + Curl | — | Health checks, container metrics |
 | **Operator** | Python + FastAPI + Bedrock | 8000 | Autonomous agent that diagnoses and acts |
+
+## Risk Model (Core of the Project)
+
+Each function/tool the agent can invoke is classified in the agent's code (not in Bedrock's schema):
+
+| Level | Example | Behavior |
+|-------|---------|----------|
+| **Read** | `get_container_metrics`, `get_health_status` | Always executes, no restriction |
+| **Low risk (autonomous)** | `restart_container` | Executes directly, recorded in trace |
+| **High risk (requires approval)** | `stop_container`, `rerun_workflow` in prod | Not executed: saved as "pending approval", notified, executes only after manual approval |
 
 ## MVP Scope
 
@@ -46,9 +71,9 @@ Operator (FastAPI + Bedrock)
 
 ## Technical Pillars
 
-### Action Groups with Risk-Based Permissions
+### Action Groups with Return Control
 
-Each action passes through classification: read (free), low-risk write (autonomous), high-risk write (requires confirmation). Implemented as logic in Lambdas, not in prompts.
+Each action passes through risk classification: read (free), low-risk write (autonomous), high-risk write (requires confirmation). Uses Bedrock's Return Control mode — no Lambda needed.
 
 ### Bedrock Guardrails
 
@@ -56,7 +81,7 @@ Block the agent from executing actions outside the allowed set. Everything goes 
 
 ### OpenTelemetry Observability
 
-Every decision generates a trace: what it asked, which tool it called, parameters used, execution time, success/failure. Sent to CloudWatch or Jaeger/Grafana.
+Every decision generates a trace: what it asked, which tool it called, parameters used, execution time, success/failure. Sent to Jaeger (local dev) or CloudWatch (production).
 
 ## Quick Start
 
@@ -82,8 +107,27 @@ AgentOperator/
     ├── main.py
     ├── bedrock_agent.py
     ├── schemas.py
+    ├── actions.py          # Action execution logic (future)
     └── Dockerfile
 ```
+
+## Stack
+
+- **Runtime**: Docker Compose
+- **API**: Node.js 20 + Express
+- **Monitor**: Alpine + Cron + Curl + Docker CLI
+- **Agent**: Python 3.12 + FastAPI + boto3 (Bedrock)
+- **Persistence**: JSON/SQLite for pending actions (Postgres if needed later)
+- **Observability**: OpenTelemetry → Jaeger (dev) / CloudWatch (AWS)
+
+## Out of Scope (MVP)
+
+- Real auto-scaling or multi-cloud
+- Complex multi-turn chat with user (flow is: alert → diagnosis → action)
+- Frontend for human approval (endpoint or CLI script is enough)
+- High concurrency optimization (portfolio project, not a real 24/7 system)
+
+The focus is on the quality of the cycle: **detect → diagnose → decide → act → record**.
 
 ## Demo
 
@@ -93,20 +137,3 @@ Scripted scenario:
 3. Operator diagnoses the cause (reviews logs)
 4. Decides to restart (low risk → autonomous)
 5. Records everything in the OpenTelemetry trace
-
-## Out of Scope (MVP)
-
-- Real auto-scaling
-- Multi-cloud support
-- Complex multi-turn chat
-- Advanced secret management
-
-The focus is on the quality of the cycle: **detect → decide → act → record**.
-
-## Stack
-
-- **Runtime**: Docker Compose
-- **API**: Node.js 20 + Express
-- **Monitor**: Alpine + Cron + Curl + Docker CLI
-- **Agent**: Python 3.12 + FastAPI + boto3 (Bedrock)
-- **Observability**: OpenTelemetry → CloudWatch/Jaeger
